@@ -1,0 +1,281 @@
+-- 1. Carrega a Venyx UI
+local Venyx = loadstring(game:HttpGet("https://raw.githubusercontent.com/GreenDeno/Venyx-UI-Library/main/source.lua"))()
+local UI = Venyx.new("NOX SYSTEM - Editor de Player", 5013109572)
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- 2. Tabela de Fardas
+local Fardas = {
+    ["Nenhuma"] = nil,
+    ["Elite"] = {S = "rbxassetid://75117162625698", P = "rbxassetid://132857388083739"},
+    ["Oficiais"] = {S = "rbxassetid://14825639654", P = "rbxassetid://14825643510"},
+    ["Generais"] = {S = "rbxassetid://278436685", P = "rbxassetid://278437052"}
+}
+
+-- 3. Histórico de Backup para Restauração
+local backups = {}
+
+-- 4. Variáveis de Configuração
+local inputTargetNick = ""
+local inputDisplayNick = ""
+local inputPatente = ""
+local inputDivisao = "N/A"
+local inputCharTarget = ""
+
+local selectedColor = Color3.fromRGB(255, 255, 255)
+
+local usarTag = true
+local fardaUsar = false
+local fardaSelecionada = "Nenhuma"
+
+local cargoStatus = "ELITE"
+local deviceIcon = "🖥️"
+
+----------------------------------------------------
+-- PÁGINA: EDITOR DE PLAYER
+----------------------------------------------------
+local PageEdit = UI:addPage("Editor", 5012544693)
+
+-- Seção 1: Identificação
+local SecIdent = PageEdit:addSection("Identificação dos Jogadores")
+
+SecIdent:addTextbox("Nick do Alvo", "Deixe vazio para você mesmo", function(value)
+    inputTargetNick = value
+end)
+
+SecIdent:addTextbox("Novo Nick Exibido", "Deixe vazio p/ manter o original", function(value)
+    inputDisplayNick = value
+end)
+
+SecIdent:addTextbox("Patente", "Ex: Coronel", function(value)
+    inputPatente = value
+end)
+
+SecIdent:addTextbox("Divisão", "Ex: ROCAM (Padrão: N/A)", function(value)
+    inputDivisao = value ~= "" and value or "N/A"
+end)
+
+-- Seção 2: Configurações de Overhead & Cor
+local SecTags = PageEdit:addSection("Configurações da Overhead")
+
+SecTags:addDropdown("Dispositivo", {"🖥️", "📱"}, function(selected)
+    deviceIcon = selected
+end)
+
+SecTags:addToggle("Ativar club", true, function(state)
+    usarTag = state
+end)
+
+SecTags:addDropdown("Selecionar club", {"ELITE", "VICE", "LIGTH"}, function(selected)
+    cargoStatus = selected
+end)
+
+SecTags:addColorPicker("Cor da Overhead", Color3.fromRGB(255, 255, 255), function(color)
+    selectedColor = color
+end)
+
+-- Seção 3: Fardamento
+local SecFarda = PageEdit:addSection("Fardamento")
+
+SecFarda:addToggle("Aplicar Farda", false, function(state)
+    fardaUsar = state
+end)
+
+SecFarda:addDropdown("Selecionar Farda", {"Nenhuma", "Elite", "Oficiais", "Generais"}, function(selected)
+    fardaSelecionada = selected
+end)
+
+----------------------------------------------------
+-- SEÇÃO DE EXECUÇÃO E RESTAURAÇÃO
+----------------------------------------------------
+local SecApply = PageEdit:addSection("Executar & Restaurar")
+
+-- BOTÃO APLICAR
+SecApply:addButton("APLICAR TODAS AS MUDANÇAS", function()
+    local targetName = inputTargetNick ~= "" and inputTargetNick or LocalPlayer.Name
+    local targetChar = workspace:FindFirstChild(targetName)
+    
+    if not targetChar or not targetChar:FindFirstChild("Head") then
+        UI:Notify("Erro!", "Jogador '" .. targetName .. "' não encontrado!")
+        return
+    end
+
+    local head = targetChar.Head
+    local labelNome = head:FindFirstChild("Nome", true) and head:FindFirstChild("Nome", true):FindFirstChildOfClass("TextLabel")
+    local labelPatente = head:FindFirstChild("Patente", true) and head:FindFirstChild("Patente", true):FindFirstChildOfClass("TextLabel")
+    local labelDivisao = (head:FindFirstChild("Divis\195\163o", true) or head:FindFirstChild("Divisão", true)) 
+                         and (head:FindFirstChild("Divis\195\163o", true) or head:FindFirstChild("Divisão", true)):FindFirstChildOfClass("TextLabel")
+
+    local shirt = targetChar:FindFirstChildOfClass("Shirt")
+    local pants = targetChar:FindFirstChildOfClass("Pants")
+
+    -- Fazer Backup do estado original
+    if not backups[targetName] then
+        backups[targetName] = {
+            ShirtTemplate = shirt and shirt.ShirtTemplate or nil,
+            PantsTemplate = pants and pants.PantsTemplate or nil,
+            NomeText = labelNome and labelNome.Text or nil,
+            NomeColor = labelNome and labelNome.TextColor3 or nil,
+            PatenteText = labelPatente and labelPatente.Text or nil,
+            PatenteColor = labelPatente and labelPatente.TextColor3 or nil,
+            DivisaoText = labelDivisao and labelDivisao.Text or nil,
+            DivisaoColor = labelDivisao and labelDivisao.TextColor3 or nil,
+        }
+    end
+
+    -- 1. APLICAÇÃO DA FARDA
+    if fardaUsar and fardaSelecionada ~= "Nenhuma" and Fardas[fardaSelecionada] then
+        local config = Fardas[fardaSelecionada]
+        shirt = shirt or Instance.new("Shirt", targetChar)
+        pants = pants or Instance.new("Pants", targetChar)
+        shirt.ShirtTemplate = config.S
+        pants.PantsTemplate = config.P
+    end
+
+    -- 2. EDITA AS TAGS OVERHEAD
+    local customNick = inputDisplayNick ~= "" and inputDisplayNick or targetName
+
+    local formattedName = ""
+    if usarTag then
+        formattedName = string.format("[%s] %s • %s", cargoStatus, deviceIcon, customNick)
+    else
+        formattedName = string.format("%s • %s", deviceIcon, customNick)
+    end
+
+    if labelNome then
+        labelNome.Text = formattedName
+        labelNome.TextColor3 = selectedColor
+    end
+
+    if labelPatente then
+        labelPatente.Text = inputPatente
+        labelPatente.TextColor3 = selectedColor
+    end
+
+    if labelDivisao then
+        labelDivisao.Text = inputDivisao
+        labelDivisao.TextColor3 = selectedColor
+    end
+
+    UI:Notify("Sucesso!", "Propriedades aplicadas em: " .. targetName)
+end)
+
+-- BOTÃO RESTAURAR PADRÃO
+SecApply:addButton("RESTAURAR PADRÃO", function()
+    local targetName = inputTargetNick ~= "" and inputTargetNick or LocalPlayer.Name
+    local targetChar = workspace:FindFirstChild(targetName)
+
+    if not targetChar or not targetChar:FindFirstChild("Head") then
+        UI:Notify("Erro!", "Jogador '" .. targetName .. "' não encontrado!")
+        return
+    end
+
+    local backup = backups[targetName]
+
+    if not backup then
+        UI:Notify("Aviso", "Nenhum histórico encontrado para: " .. targetName)
+        return
+    end
+
+    -- Restaura Farda
+    local shirt = targetChar:FindFirstChildOfClass("Shirt")
+    local pants = targetChar:FindFirstChildOfClass("Pants")
+
+    if shirt then
+        if backup.ShirtTemplate then
+            shirt.ShirtTemplate = backup.ShirtTemplate
+        else
+            shirt:Destroy()
+        end
+    end
+
+    if pants then
+        if backup.PantsTemplate then
+            pants.PantsTemplate = backup.PantsTemplate
+        else
+            pants:Destroy()
+        end
+    end
+
+    -- Restaura Overhead
+    local head = targetChar.Head
+    local labelNome = head:FindFirstChild("Nome", true) and head:FindFirstChild("Nome", true):FindFirstChildOfClass("TextLabel")
+    local labelPatente = head:FindFirstChild("Patente", true) and head:FindFirstChild("Patente", true):FindFirstChildOfClass("TextLabel")
+    local labelDivisao = (head:FindFirstChild("Divis\195\163o", true) or head:FindFirstChild("Divisão", true)) 
+                         and (head:FindFirstChild("Divis\195\163o", true) or head:FindFirstChild("Divisão", true)):FindFirstChildOfClass("TextLabel")
+
+    if labelNome and backup.NomeText then
+        labelNome.Text = backup.NomeText
+        labelNome.TextColor3 = backup.NomeColor
+    end
+
+    if labelPatente and backup.PatenteText then
+        labelPatente.Text = backup.PatenteText
+        labelPatente.TextColor3 = backup.PatenteColor
+    end
+
+    if labelDivisao and backup.DivisaoText then
+        labelDivisao.Text = backup.DivisaoText
+        labelDivisao.TextColor3 = backup.DivisaoColor
+    end
+
+    UI:Notify("Restaurado!", "Aparência original de " .. targetName .. " restaurada.")
+end)
+
+----------------------------------------------------
+-- NOVA SEÇÃO: MOORPH / COPIAR APARÊNCIA (CHAR)
+----------------------------------------------------
+local SecMorph = PageEdit:addSection("Copiar Aparência (Char)")
+
+SecMorph:addTextbox("Nick do Player (Roblox)", "Ex: Roblox", function(value)
+    inputCharTarget = value
+end)
+
+SecMorph:addButton("COPIAR SKIN (VISUAL)", function()
+    if inputCharTarget == "" then
+        UI:Notify("Aviso", "Digite o nome exato de um jogador do Roblox!")
+        return
+    end
+
+    UI:Notify("Aguarde", "Buscando visual de: " .. inputCharTarget)
+
+    task.spawn(function()
+        local success, targetUserId = pcall(function()
+            return Players:GetUserIdFromNameAsync(inputCharTarget)
+        end)
+
+        if not success or not targetUserId then
+            UI:Notify("Erro!", "Não foi possível encontrar o UserId para: " .. inputCharTarget)
+            return
+        end
+
+        local myChar = LocalPlayer.Character
+        if not myChar or not myChar:FindFirstChild("Humanoid") then
+            UI:Notify("Erro!", "Seu personagem não está carregado!")
+            return
+        end
+
+        local humanoid = myChar:FindFirstChildOfClass("Humanoid")
+
+        -- Aplica a descrição do avatar via HumanoidDescription
+        local descSuccess, humDesc = pcall(function()
+            return Players:GetHumanoidDescriptionFromUserId(targetUserId)
+        end)
+
+        if descSuccess and humDesc then
+            pcall(function()
+                humanoid:ApplyDescription(humDesc)
+            end)
+            UI:Notify("Sucesso!", "Sua skin foi alterada para: " .. inputCharTarget)
+        else
+            UI:Notify("Erro!", "Falha ao carregar roupas/acessórios do avatar.")
+        end
+    end)
+end)
+
+-- Atalho para ocultar UI (Left Control)
+UI:bindToKey(Enum.KeyCode.LeftControl)
+
+-- Seleciona a página principal
+UI:SelectPage(PageEdit, true)
