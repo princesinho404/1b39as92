@@ -1,0 +1,646 @@
+
+local Settings = {
+    Enabled = false,
+    Key = "Q",
+    UIKey = "U", -- Tecla para ocultar/mostrar a interface
+    Prediction = 0.110,
+    AimPart = "Head",
+    FOV = 120,
+    OffsetX = 0,
+    OffsetY = 58,
+    Smoothness = 3,
+    TeamCheck = true,
+    FovVisible = true,
+    WallCheck = true,
+    AimNPCs = false,
+    MaxDistance = 500,
+    InfDistance = false,
+    UserWhitelist = {},   -- Armazena estritamente os Usernames (strings) dos jogadores ignorados
+    ESPOpposite = false
+}
+
+Settings.Key = tostring(Settings.Key):upper()
+Settings.UIKey = tostring(Settings.UIKey):upper()
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Teams = game:GetService("Teams")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local Target = nil
+local RightClick = false
+
+local displayParts = {"Head", "Torso", "HumanoidRootPart", "Right Arm", "Left Arm", "Right Leg", "Left Leg", "Right Hand"}
+local actualParts = {"Head", "Torso", "HumanoidRootPart", "RightUpperArm", "LeftUpperArm", "RightUpperLeg", "LeftUpperLeg", "RightHand"}
+local currentPartIndex = 1
+
+local okDrawing, Drawing = pcall(function() return Drawing end)
+if not okDrawing then Drawing = nil end
+
+local FOVCircle, CenterDot
+if Drawing then
+    FOVCircle = Drawing.new("Circle")
+    FOVCircle.Radius = Settings.FOV
+    FOVCircle.Color = Color3.new(1,1,1)
+    FOVCircle.Thickness = 1.5
+    FOVCircle.Filled = false
+    FOVCircle.Transparency = 1
+    FOVCircle.Visible = false
+
+    CenterDot = Drawing.new("Circle")
+    CenterDot.Radius = 2
+    CenterDot.Color = Color3.new(1,1,1)
+    CenterDot.Filled = true
+    CenterDot.Transparency = 1
+    CenterDot.Visible = false
+end
+
+local CoreGui = game:GetService("CoreGui")
+local STORAGE_NAME = "Highlight_Storage_AIMBOT"
+local storage = CoreGui:FindFirstChild(STORAGE_NAME) or Instance.new("Folder", CoreGui)
+storage.Name = STORAGE_NAME
+
+local Gui = Instance.new("ScreenGui")
+Gui.Name = "AimbotGUI"
+Gui.ResetOnSpawn = false
+Gui.Parent = CoreGui
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 200, 0, 580)
+Frame.Position = UDim2.new(0, 10, 0.5, -290)
+Frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+Frame.BorderSizePixel = 2
+Frame.BorderColor3 = Color3.fromRGB(100,100,100)
+Frame.Active = true
+Frame.Draggable = true
+Frame.Visible = true
+Frame.Parent = Gui
+
+-- Menu expansÃ­vel da Whitelist (Lista de nicks ativos)
+local WhitelistMenu = Instance.new("ScrollingFrame")
+WhitelistMenu.Size = UDim2.new(0, 180, 0, 120)
+WhitelistMenu.Position = UDim2.new(0, 10, 0, 420)
+WhitelistMenu.BackgroundColor3 = Color3.fromRGB(20,20,20)
+WhitelistMenu.BorderSizePixel = 1
+WhitelistMenu.BorderColor3 = Color3.fromRGB(80,80,80)
+WhitelistMenu.ScrollBarThickness = 6
+WhitelistMenu.CanvasSize = UDim2.new(0, 0, 0, 0)
+WhitelistMenu.Visible = true
+WhitelistMenu.Parent = Frame
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Padding = UDim.new(0, 2)
+UIListLayout.Parent = WhitelistMenu
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1,0,0,25)
+Title.BackgroundTransparency = 1
+Title.Text = "Aimbot Settings"
+Title.TextColor3 = Color3.new(1,1,1)
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 16
+Title.Parent = Frame
+
+local KeyBindButton = Instance.new("TextButton")
+KeyBindButton.Size = UDim2.new(0, 80, 0, 20)
+KeyBindButton.Position = UDim2.new(1, -90, 0, 4)
+KeyBindButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
+KeyBindButton.TextColor3 = Color3.new(1,1,1)
+KeyBindButton.Font = Enum.Font.SourceSans
+KeyBindButton.TextSize = 14
+KeyBindButton.Text = "Key: " .. (Settings.Key or "Q")
+KeyBindButton.Parent = Frame
+
+local keyCapturing = false
+KeyBindButton.MouseButton1Click:Connect(function()
+    if keyCapturing then return end
+    keyCapturing = true
+    KeyBindButton.Text = "Press key..."
+    local conn
+    conn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            local name = input.KeyCode and input.KeyCode.Name
+            if name and name ~= "" then
+                Settings.Key = tostring(name):upper()
+                KeyBindButton.Text = "Key: " .. Settings.Key
+            end
+            keyCapturing = false
+            conn:Disconnect()
+        end
+    end)
+end)
+
+local function CreateLabel(text, posY)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1,0,0,20)
+    l.Position = UDim2.new(0,0,0,posY)
+    l.BackgroundTransparency = 1
+    l.Text = text
+    l.TextColor3 = Color3.new(1,1,1)
+    l.Font = Enum.Font.SourceSans
+    l.TextSize = 14
+    l.Parent = Frame
+    return l
+end
+
+local YLabel = CreateLabel("Up/Down: 58", 25)
+local XLabel = CreateLabel("Left/Right: 0", 60)
+local FOVLabel = CreateLabel("FOV: 180", 95)
+local SLabel = CreateLabel("Smooth: 5", 130)
+local DLabel = CreateLabel("Max Dist: 500", 165)
+local PLabel = CreateLabel("Predict: 0.135", 200)
+
+local function CreateSlider(posY, fillColor)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1,-20,0,15)
+    btn.Position = UDim2.new(0,10,0,posY)
+    btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+    btn.Text = ""
+    btn.BorderSizePixel = 0
+    btn.Parent = Frame
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new(0.5,0,1,0)
+    fill.BackgroundColor3 = fillColor
+    fill.BorderSizePixel = 0
+    fill.Parent = btn
+    return btn, fill
+end
+
+local YSlider, YFill = CreateSlider(45, Color3.fromRGB(0,170,255))
+local XSlider, XFill = CreateSlider(80, Color3.fromRGB(0,170,255))
+local FOVSlider, FOVFill = CreateSlider(115, Color3.fromRGB(0,170,255))
+local SSlider, SFill = CreateSlider(150, Color3.fromRGB(0,255,0))
+local DSlider, DFill = CreateSlider(185, Color3.fromRGB(255,100,100))
+local PSlider, PFill = CreateSlider(220, Color3.fromRGB(255,200,0))
+
+local AimPartToggle = Instance.new("TextButton")
+AimPartToggle.Size = UDim2.new(1,-20,0,20)
+AimPartToggle.Position = UDim2.new(0,10,0,240)
+AimPartToggle.BackgroundColor3 = Color3.fromRGB(60,60,60)
+AimPartToggle.Text = "Aim Part: Head"
+AimPartToggle.TextColor3 = Color3.new(1,1,1)
+AimPartToggle.Font = Enum.Font.SourceSans
+AimPartToggle.TextSize = 14
+AimPartToggle.Parent = Frame
+
+AimPartToggle.MouseButton1Click:Connect(function()
+    currentPartIndex = currentPartIndex + 1
+    if currentPartIndex > #displayParts then currentPartIndex = 1 end
+    Settings.AimPart = actualParts[currentPartIndex]
+    AimPartToggle.Text = "Aim Part: " .. displayParts[currentPartIndex]
+end)
+
+-- Interface de Whitelist Inteligente Corrigida
+local WhitelistLabel = CreateLabel("Smart Whitelist (User or Team)", 265)
+local TeamNameBox = Instance.new("TextBox")
+TeamNameBox.Size = UDim2.new(0.6,0,0,20)
+TeamNameBox.Position = UDim2.new(0,10,0,285)
+TeamNameBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+TeamNameBox.PlaceholderText = "Nick / Team Name..."
+TeamNameBox.TextColor3 = Color3.new(1,1,1)
+TeamNameBox.Font = Enum.Font.SourceSans
+TeamNameBox.TextSize = 14
+TeamNameBox.Parent = Frame
+
+local AddTeamButton = Instance.new("TextButton")
+AddTeamButton.Size = UDim2.new(0.4,-5,0,20)
+AddTeamButton.Position = UDim2.new(0.6,10,0,285)
+AddTeamButton.BackgroundColor3 = Color3.fromRGB(0,170,0)
+AddTeamButton.Text = "Add"
+AddTeamButton.TextColor3 = Color3.new(1,1,1)
+AddTeamButton.Font = Enum.Font.SourceSans
+AddTeamButton.Parent = Frame
+
+local ClearWhitelistButton = Instance.new("TextButton")
+ClearWhitelistButton.Size = UDim2.new(1,-20,0,20)
+ClearWhitelistButton.Position = UDim2.new(0,10,0,310)
+ClearWhitelistButton.BackgroundColor3 = Color3.fromRGB(200,60,60)
+ClearWhitelistButton.Text = "Clear All Whitelist"
+ClearWhitelistButton.TextColor3 = Color3.new(1,1,1)
+ClearWhitelistButton.Font = Enum.Font.SourceSans
+ClearWhitelistButton.Parent = Frame
+
+local function CreateMiniToggle(text, posX, posY, sizeX)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(sizeX, -5, 0, 18)
+    btn.Position = UDim2.new(posX, 5, 0, posY)
+    btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+    btn.Text = text
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 12
+    btn.Parent = Frame
+    return btn
+end
+
+local TeamCheckToggle = CreateMiniToggle("Team Chk: ON", 0, 335, 0.5)
+local FovVisibleToggle = CreateMiniToggle("FOV Vis: ON", 0.5, 335, 0.5)
+local ESPToggle = CreateMiniToggle("ESP: OFF", 0, 355, 0.5)
+local WallCheckToggle = CreateMiniToggle("Wall Chk: ON", 0.5, 355, 0.5)
+local AimNPCsToggle = CreateMiniToggle("NPCs: OFF", 0, 375, 0.5)
+local InfDistanceToggle = CreateMiniToggle("Inf Dist: OFF", 0.5, 375, 0.5)
+
+local function IsWhitelisted(player)
+    if not player then return false end
+    return table.find(Settings.UserWhitelist, player.Name) ~= nil
+end
+
+local function UpdateWhitelistUI()
+    for _, child in ipairs(WhitelistMenu:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
+    
+    local totalElements = 0
+    for _, name in ipairs(Settings.UserWhitelist) do
+        local p = Players:FindFirstChild(name)
+        if p and p ~= LocalPlayer then
+            totalElements = totalElements + 1
+            local itemFrame = Instance.new("Frame")
+            itemFrame.Size = UDim2.new(1, 0, 0, 18)
+            itemFrame.BackgroundTransparency = 1
+            itemFrame.Parent = WhitelistMenu
+            
+            local nameLabel = Instance.new("TextLabel")
+            nameLabel.Size = UDim2.new(0.75, 0, 1, 0)
+            nameLabel.Text = p.Name
+            nameLabel.TextColor3 = Color3.new(0.9,0.9,0.9)
+            nameLabel.Font = Enum.Font.SourceSans
+            nameLabel.TextSize = 12
+            nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.Parent = itemFrame
+            
+            local removeBtn = Instance.new("TextButton")
+            removeBtn.Size = UDim2.new(0.25, -2, 1, -2)
+            removeBtn.Position = UDim2.new(0.75, 0, 0, 1)
+            removeBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+            removeBtn.Text = "X"
+            removeBtn.TextColor3 = Color3.new(1,1,1)
+            removeBtn.TextSize = 10
+            removeBtn.Parent = itemFrame
+            
+            removeBtn.MouseButton1Click:Connect(function()
+                local idx = table.find(Settings.UserWhitelist, p.Name)
+                if idx then
+                    table.remove(Settings.UserWhitelist, idx)
+                end
+                UpdateWhitelistUI()
+                if typeof(RefreshESP) == "function" then RefreshESP() end
+            end)
+        end
+    end
+    WhitelistMenu.CanvasSize = UDim2.new(0, 0, 0, totalElements * 20)
+end
+
+AddTeamButton.MouseButton1Click:Connect(function()
+    local text = string.lower(TeamNameBox.Text:match("^%s*(.-)%s*$") or "")
+    if text == "" then return end
+    
+    local addedAny = false
+    
+    -- Verificar se o input condiz com iniciais de algum Time
+    for _, t in ipairs(Teams:GetTeams()) do
+        if string.sub(string.lower(t.Name), 1, #text) == text then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Team == t and p ~= LocalPlayer and not table.find(Settings.UserWhitelist, p.Name) then
+                    table.insert(Settings.UserWhitelist, p.Name)
+                    addedAny = true
+                end
+            end
+        end
+    end
+    
+    -- Se nÃ£o era um time vÃ¡lido, procura por iniciais de Username de jogadores ativos
+    if not addedAny then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if string.sub(string.lower(p.Name), 1, #text) == text and p ~= LocalPlayer then
+                if not table.find(Settings.UserWhitelist, p.Name) then
+                    table.insert(Settings.UserWhitelist, p.Name)
+                end
+            end
+        end
+    end
+    
+    TeamNameBox.Text = ""
+    UpdateWhitelistUI()
+    RefreshESP()
+end)
+
+ClearWhitelistButton.MouseButton1Click:Connect(function()
+    Settings.UserWhitelist = {}
+    UpdateWhitelistUI()
+    RefreshESP()
+end)
+
+local ESPInstances = {}
+local function destroyHighlightForModel(model)
+    if not model then return end
+    local hl = ESPInstances[model]
+    if hl and hl.Parent then hl:Destroy() end
+    ESPInstances[model] = nil
+end
+
+local function createHighlightForModel(model, fillColor)
+    if not model or not model:IsA("Model") then return end
+    destroyHighlightForModel(model)
+    local ok, Highlight = pcall(Instance.new, "Highlight")
+    if not ok or not Highlight then return end
+    Highlight.Name = "ESP_Highlight"
+    Highlight.Adornee = model
+    Highlight.FillColor = fillColor or Color3.new(1, 0, 0)
+    Highlight.FillTransparency = 0.7
+    Highlight.OutlineColor = Color3.new(0, 0, 0)
+    Highlight.OutlineTransparency = 0.5
+    Highlight.Enabled = true
+    Highlight.Parent = storage
+    ESPInstances[model] = Highlight
+end
+
+local function ClearAllESP()
+    local keys = {}
+    for model, _ in pairs(ESPInstances) do keys[#keys+1] = model end
+    for _, model in ipairs(keys) do destroyHighlightForModel(model) end
+end
+
+local function shouldHighlightPlayerModel(model)
+    if not model then return false end
+    local plr = Players:GetPlayerFromCharacter(model)
+    if not plr or plr == LocalPlayer then return false end
+    if IsWhitelisted(plr) then return false end
+    if Settings.TeamCheck and LocalPlayer.Team and plr.Team == LocalPlayer.Team then return false end
+    return true
+end
+
+function RefreshESP()
+    local keys = {}
+    for model, _ in pairs(ESPInstances) do keys[#keys+1] = model end
+    for _, model in ipairs(keys) do
+        if not model or not model.Parent then
+            destroyHighlightForModel(model)
+        else
+            if not Settings.ESPOpposite then
+                destroyHighlightForModel(model)
+            else
+                if not shouldHighlightPlayerModel(model) then destroyHighlightForModel(model) end
+            end
+        end
+    end
+    if not Settings.ESPOpposite then return end
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character.Parent then
+            if shouldHighlightPlayerModel(plr.Character) then
+                local col = (plr.Team and plr.Team.TeamColor and plr.Team.TeamColor.Color) or Color3.new(1, 0, 0)
+                createHighlightForModel(plr.Character, col)
+            else
+                destroyHighlightForModel(plr.Character)
+            end
+        end
+    end
+end
+
+TeamCheckToggle.MouseButton1Click:Connect(function()
+    Settings.TeamCheck = not Settings.TeamCheck
+    TeamCheckToggle.Text = "Team Chk: " .. (Settings.TeamCheck and "ON" or "OFF")
+    RefreshESP()
+end)
+FovVisibleToggle.MouseButton1Click:Connect(function()
+    Settings.FovVisible = not Settings.FovVisible
+    FovVisibleToggle.Text = "FOV Vis: " .. (Settings.FovVisible and "ON" or "OFF")
+    if Drawing and FOVCircle and CenterDot then
+        FOVCircle.Visible = Settings.FovVisible and Settings.Enabled
+        CenterDot.Visible = Settings.FovVisible and Settings.Enabled
+    end
+end)
+ESPToggle.MouseButton1Click:Connect(function()
+    Settings.ESPOpposite = not Settings.ESPOpposite
+    ESPToggle.Text = "ESP: " .. (Settings.ESPOpposite and "ON" or "OFF")
+    if Settings.ESPOpposite then RefreshESP() else ClearAllESP() end
+end)
+WallCheckToggle.MouseButton1Click:Connect(function()
+    Settings.WallCheck = not Settings.WallCheck
+    WallCheckToggle.Text = "Wall Chk: " .. (Settings.WallCheck and "ON" or "OFF")
+end)
+AimNPCsToggle.MouseButton1Click:Connect(function()
+    Settings.AimNPCs = not Settings.AimNPCs
+    AimNPCsToggle.Text = "NPCs: " .. (Settings.AimNPCs and "ON" or "OFF")
+end)
+InfDistanceToggle.MouseButton1Click:Connect(function()
+    Settings.InfDistance = not Settings.InfDistance
+    InfDistanceToggle.Text = "Inf Dist: " .. (Settings.InfDistance and "ON" or "OFF")
+end)
+
+YFill.Size = UDim2.new((Settings.OffsetY + 100)/200, 0, 1, 0)
+XFill.Size = UDim2.new((Settings.OffsetX + 100)/200, 0, 1, 0)
+FOVFill.Size = UDim2.new(math.clamp(Settings.FOV / 500, 0, 1), 0, 1, 0)
+SFill.Size = UDim2.new((Settings.Smoothness - 1)/19, 0, 1, 0)
+DFill.Size = UDim2.new(Settings.MaxDistance / 1000, 0, 1, 0)
+PFill.Size = UDim2.new(Settings.Prediction / 0.5, 0, 1, 0)
+
+local dragging = nil
+YSlider.MouseButton1Down:Connect(function() dragging = "Y" end)
+XSlider.MouseButton1Down:Connect(function() dragging = "X" end)
+FOVSlider.MouseButton1Down:Connect(function() dragging = "F" end)
+SSlider.MouseButton1Down:Connect(function() dragging = "S" end)
+DSlider.MouseButton1Down:Connect(function() dragging = "D" end)
+PSlider.MouseButton1Down:Connect(function() dragging = "P" end)
+
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = nil end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if not dragging or not Mouse then return end
+    local mx = Mouse.X
+    local slider = dragging == "Y" and YSlider or dragging == "X" and XSlider or dragging == "S" and SSlider or dragging == "D" and DSlider or dragging == "P" and PSlider or dragging == "F" and FOVSlider
+    local fill = dragging == "Y" and YFill or dragging == "X" and XFill or dragging == "S" and SFill or dragging == "D" and DFill or dragging == "P" and PFill or dragging == "F" and FOVFill
+    if not slider then return end
+    local sx = slider.AbsolutePosition.X
+    local w = slider.AbsoluteSize.X
+    local rel = math.clamp((mx - sx) / w, 0, 1)
+    fill.Size = UDim2.new(rel, 0, 1, 0)
+    if dragging == "Y" then
+        Settings.OffsetY = math.floor(rel * 200 - 100)
+        YLabel.Text = "Up/Down: " .. Settings.OffsetY
+    elseif dragging == "X" then
+        Settings.OffsetX = math.floor(rel * 200 - 100)
+        XLabel.Text = "Left/Right: " .. Settings.OffsetX
+    elseif dragging == "S" then
+        Settings.Smoothness = math.max(1, math.floor(rel * 19 + 1))
+        SLabel.Text = "Smooth: " .. Settings.Smoothness
+    elseif dragging == "D" then
+        Settings.MaxDistance = math.floor(rel * 1000)
+        DLabel.Text = "Max Dist: " .. Settings.MaxDistance
+    elseif dragging == "F" then
+        Settings.FOV = math.max(0, math.floor(rel * 500))
+        FOVLabel.Text = "FOV: " .. Settings.FOV
+        if Drawing and FOVCircle then FOVCircle.Radius = Settings.FOV end
+    else
+        Settings.Prediction = rel * 0.5
+        PLabel.Text = "Predict: " .. string.format("%.3f", Settings.Prediction)
+    end
+end)
+
+local function IsInRange(aimPart)
+    if Settings.InfDistance then return true end
+    if not aimPart then return false end
+    return (Camera.CFrame.Position - aimPart.Position).Magnitude <= Settings.MaxDistance
+end
+
+local function IsVisible(aimPart)
+    if not Settings.WallCheck then return true end
+    if not aimPart then return false end
+    local origin = Camera.CFrame.Position
+    local dir = (aimPart.Position - origin)
+    local ray = Ray.new(origin, dir.Unit * dir.Magnitude)
+    local hit = workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character})
+    return hit and (hit:IsDescendantOf(aimPart.Parent) or hit == aimPart)
+end
+
+-- Busca Inicial do Aimbot (SÃ³ roda no primeiro clique ou se o alvo anterior quebrar por morte/saÃ­da)
+local function GetClosestTarget()
+    local best = nil
+    local bestDist = Settings.FOV
+    local cx = Mouse.X + Settings.OffsetX
+    local cy = Mouse.Y + Settings.OffsetY
+    
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr == LocalPlayer or not plr.Character then continue end
+        if Settings.TeamCheck and plr.Team == LocalPlayer.Team then continue end
+        if IsWhitelisted(plr) then continue end
+        
+        local char = plr.Character
+        local aimPart = char:FindFirstChild(Settings.AimPart)
+        local hum = char:FindFirstChild("Humanoid")
+        if aimPart and hum and hum.Health > 0 and IsInRange(aimPart) then
+            local pos, onScreen = Camera:WorldToViewportPoint(aimPart.Position)
+            if onScreen and IsVisible(aimPart) then
+                local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(cx, cy)).Magnitude
+                if dist < bestDist then
+                    best = char
+                    bestDist = dist
+                end
+            end
+        end
+    end
+    
+    if Settings.AimNPCs and not best then
+        for _, model in pairs(workspace:GetDescendants()) do
+            if not model:IsA("Model") or model == LocalPlayer.Character or Players:GetPlayerFromCharacter(model) then continue end
+            local hum = model:FindFirstChild("Humanoid")
+            local aimPart = model:FindFirstChild(Settings.AimPart)
+            if hum and aimPart and hum.Health > 0 and IsInRange(aimPart) then
+                local pos, onScreen = Camera:WorldToViewportPoint(aimPart.Position)
+                if onScreen and IsVisible(aimPart) then
+                    local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(cx, cy)).Magnitude
+                    if dist < bestDist then
+                        best = model
+                        bestDist = dist
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+-- Captura de inputs (Aimbot e UI no U com anti-chat de gameProcessed)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end 
+    
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode and input.KeyCode.Name == Settings.Key then
+        Settings.Enabled = not Settings.Enabled
+        if Settings.Enabled then
+            Target = GetClosestTarget()
+            if Drawing and Settings.FovVisible then
+                FOVCircle.Visible = true
+                CenterDot.Visible = true
+            end
+        else
+            Target = nil
+            if Drawing and FOVCircle and CenterDot then
+                FOVCircle.Visible = false
+                CenterDot.Visible = false
+            end
+        end
+    end
+    
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode and input.KeyCode.Name == Settings.UIKey then
+        Frame.Visible = not Frame.Visible
+    end
+end)
+
+if Mouse then
+    Mouse.Button2Down:Connect(function() RightClick = true end)
+    Mouse.Button2Up:Connect(function() RightClick = false end)
+end
+
+RunService.Heartbeat:Connect(function()
+    local cx = Mouse.X + Settings.OffsetX
+    local cy = Mouse.Y + Settings.OffsetY
+    if Drawing and FOVCircle and CenterDot then
+        FOVCircle.Position = Vector2.new(cx, cy)
+        CenterDot.Position = Vector2.new(cx, cy)
+        FOVCircle.Radius = Settings.FOV
+        FOVCircle.Visible = Settings.Enabled and Settings.FovVisible
+        CenterDot.Visible = Settings.Enabled and Settings.FovVisible
+    end
+    
+    if not Settings.Enabled or RightClick then return end
+    
+    -- Se nÃ£o houver alvo trancado na memÃ³ria, procura um inicial
+    if not Target then
+        Target = GetClosestTarget()
+    end
+    
+    if not Target then return end
+    
+    local aimPart = Target:FindFirstChild(Settings.AimPart)
+    local hum = Target:FindFirstChild("Humanoid")
+    
+    -- Se o cara morrer ou sair da partida/distÃ¢ncia mÃ¡xima, limpa a memÃ³ria totalmente para buscar outro no prÃ³ximo loop
+    if not aimPart or not hum or hum.Health <= 0 or not IsInRange(aimPart) then
+        Target = nil
+        return
+    end
+    
+    local pos, onScreen = Camera:WorldToViewportPoint(aimPart.Position)
+    
+    -- TRAVA ESTREITA: Se o alvo sumir atrÃ¡s de uma parede ou sair da tela, congelamos a mira 
+    -- dando um 'return', mas o Target CONTINUA SALVO. Ele nÃ£o vai pular para outro player.
+    if not onScreen or (Settings.WallCheck and not IsVisible(aimPart)) then 
+        return 
+    end
+    
+    -- CÃ³digo de movimentaÃ§Ã£o suave e prediÃ§Ã£o (SÃ“ EXECUTA se ele estiver 100% visÃ­vel)
+    local pred = aimPart.Position
+    if Settings.Prediction > 0 then
+        local velocity = aimPart.AssemblyLinearVelocity or aimPart.Velocity or Vector3.new()
+        pred = aimPart.Position + velocity * Settings.Prediction
+    end
+    local scr = Camera:WorldToScreenPoint(pred)
+    local deltaX = math.round((scr.X - Mouse.X) / Settings.Smoothness)
+    local deltaY = math.round((scr.Y - Mouse.Y) / Settings.Smoothness)
+    if type(mousemoverel) == "function" then
+        mousemoverel(deltaX, deltaY)
+    end
+end)
+
+Players.PlayerAdded:Connect(function(plr)
+    plr.CharacterAdded:Connect(function() task.wait(0.1); RefreshESP(); UpdateWhitelistUI() end)
+    plr:GetPropertyChangedSignal("Team"):Connect(function() RefreshESP(); UpdateWhitelistUI() end)
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+    if Target and Target == plr.Character then Target = nil end
+    local idx = table.find(Settings.UserWhitelist, plr.Name)
+    if idx then table.remove(Settings.UserWhitelist, idx) end
+    destroyHighlightForModel(plr.Character)
+    RefreshESP()
+    UpdateWhitelistUI()
+end)
+
+LocalPlayer:GetPropertyChangedSignal("Team"):Connect(RefreshESP)
+ClearAllESP()
