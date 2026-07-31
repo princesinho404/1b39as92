@@ -59,7 +59,7 @@ local ASSETS = {
 }
 
 local DISCORD = {
-    GGT5MHUGA53S = "discord.gg/T5MhuGA53S"
+    GGT5MHUGA53S = "discord.gg/havac"
 }
 
 local teclaAtalhoAtiva = Enum.KeyCode.K
